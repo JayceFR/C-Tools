@@ -61,8 +61,14 @@ file readFile(char *name){
     // printf("line read <%s>\n", line);
     add_dynarray(returnFile->lines, strdup(line));
   }
+
+  fclose(f);
+
   return returnFile; 
 }
+
+// Need to extract the definitions 
+// Hacky way of doing it would be 
 
 
 int main(int argc, char **argv){
@@ -77,6 +83,7 @@ int main(int argc, char **argv){
   file f = readFile(argv[1]);
   print_dynarray(f->lines, stdout);
 
+  freeFile(f);
 
   return EXIT_SUCCESS;
 }
