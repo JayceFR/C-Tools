@@ -8,7 +8,7 @@
 #include "dynarray.h"
 
 // Assumption: Any line doesn't cross 80 characters
-#define LINELEN 80
+#define LINELEN 180
 
 struct file{
   char *name; 
@@ -27,7 +27,7 @@ void freeLine(DA_ELEMENT el){
   free(line);
 }
 
-file constructFile(){
+file constructFile(void){
   file newFile = malloc(sizeof(struct file));
   assert(newFile != NULL);
 
@@ -143,46 +143,80 @@ void uppercase_basename(const char *path, char *up){
 
 void writeUpdateHeaders(const char *header_name, dynarray prototypes, int header_len){
   FILE *f = fopen(header_name, "r");
-  dynarray existingLines = create_dynarray(freeLine, printLine);
+  dynarray lines = create_dynarray(freeLine, printLine);
+
+  char guard[128];
+  char upHeader[header_len];
+  uppercase_basename(header_name, upHeader);
+  snprintf(guard, sizeof(guard), "__%s_H__", upHeader);
 
   if (f){
     // File exists 
     char line[LINELEN];
     while (fgets(line, sizeof(line), f)){
-      add_dynarray(existingLines, strdup(line));
+      add_dynarray(lines, strdup(line));
     }
     fclose(f);
+  } else{
+    // Create a fake one  
+    char line[150];   
+
+    sprintf(line, "#ifndef %s \n", guard);
+    printf("%s\n", line);
+    add_dynarray(lines, strdup(line));
+
+    sprintf(line, "#define %s \n", guard);
+    printf("%s\n", line);
+    add_dynarray(lines, strdup(line));
+
+    sprintf(line, "#endif // %s \n\n ", guard);
+    printf("%s\n", line);
+    add_dynarray(lines, strdup(line));
+  }
+
+  // list of flags for each prototype, which says if it is written or not 
+  bool *flags = malloc(prototypes->len * sizeof(bool));
+  for (int i = 0; i < prototypes->len; i++){
+    flags[i] = false;
+  }
+
+  // Mark the prototypes visited 
+  for (int i = 0; i < prototypes->len; i++){
+    char *fun = prototypes->data[i];
+    for (int j = 0; j < lines->len; j++){
+      if (strstr(lines->data[j], fun)){
+        flags[i] = true;
+      }
+    }
+  }
+  
+  // Now insert the non visited prototypes before the #endif 
+  int endifPos = lines->len - 1;
+  for (; endifPos >= 0 && strstr(lines->data[endifPos], "#endif") == NULL; endifPos--){
+    /* EMPTY BODY */
   }
 
   f = fopen(header_name, "w");
   assert(f != NULL);
 
-  char guard[128];
-  char upHeader[header_len];
-  uppercase_basename(header_name, upHeader);
-  snprintf(guard, sizeof(guard), "__%s_H__", upHeader); // Need to upper case in future 
-  fprintf(f, "#ifndef %s\n#define %s\n\n", guard, guard);
+  // write everything upto endif pos 
+  for (int i = 0; i < endifPos; i++){
+    fprintf(f, "%s", (char *) lines->data[i]);
+  }
 
+  // now write the missing prototypes 
   for (int i = 0; i < prototypes->len; i++){
-    char *proto = prototypes->data[i];
-    bool already_present = false; 
-
-    for (int j = 0; j < existingLines->len; j++){
-      if (strstr(existingLines->data[j], proto)){
-        already_present = true;
-        break;
-      }
-    }
-
-    if (!already_present){
-      fprintf(f, "%s\n", proto);
+    if (!flags[i]){
+      fprintf(f, "%s\n", (char *) prototypes->data[i]);
     }
   }
 
   fprintf(f, "\n#endif // %s\n", guard);
-  fclose(f);
 
-  free_dynarray(existingLines);
+  free(flags);
+
+  fclose(f);
+  free_dynarray(lines);
 }
 
 int main(int argc, char **argv){
