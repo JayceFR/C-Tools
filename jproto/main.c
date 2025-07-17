@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include "dynarray.h"
 
@@ -68,7 +69,60 @@ file readFile(char *name){
 }
 
 // Need to extract the definitions 
-// Hacky way of doing it would be 
+// Hacky way of doing it would be to just get the function definitions 
+// which are not indented, lol :)
+// need to have '(', ')' and { 
+dynarray extractFns(file f){
+  // iterate over the lines 
+
+  char combined[1024] = {0};
+  bool collecting = false; 
+
+  for (int x = 0; x < f->lines->len; x++){
+    char *line = f->lines->data[x];
+  
+    // ignore interiro and static functions 
+    if (line[0] == ' '|| strstr(line, "static") != NULL){
+      continue; 
+    }
+
+    // ignore comments and main function 
+    if (strstr(line, "//") != NULL || strstr(line, "main") != NULL){
+      continue;
+    }
+    
+    if (strchr(line, '(')){
+      collecting = true;
+    }
+
+    if (collecting){
+      strcat(combined, line);
+      strcat(combined, " ");
+    }
+
+    if (collecting && strchr(line, ')')){
+      // check if combined looks like a function 
+      if (strchr(combined, '{') || (x + 1 < f->lines->len && strchr(f->lines->data[x+1], '{'))){
+        // its a function 
+        // remove the trailing { if present 
+        if (strchr(combined, '{')){
+          int i = strlen(combined) - 1;
+          for ( ; i >= 0 && combined[i] != '{'; i--){
+            /* EMPTY BODY */
+          }
+          combined[i] = '\0';
+        }
+        char fun[1200] = "extern ";
+        strcat(fun, combined);
+        strcat(fun, ";");
+        printf("%s\n", fun);
+      }
+      collecting = false; 
+      combined[0] = '\0';
+    }
+  }
+  return NULL;
+}
 
 
 int main(int argc, char **argv){
@@ -78,12 +132,14 @@ int main(int argc, char **argv){
     exit(EXIT_FAILURE);
   }
 
-  printf("%s", argv[1]);
+  // printf("%s", argv[1]);
 
   file f = readFile(argv[1]);
-  print_dynarray(f->lines, stdout);
+  // print_dynarray(f->lines, stdout);
 
-  freeFile(f);
+  extractFns(f);
+
+  // freeFile(f);
 
   return EXIT_SUCCESS;
 }
