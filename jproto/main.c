@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <string.h>
 #include <stdbool.h>
+#include <ctype.h>
 
 #include "dynarray.h"
 
@@ -36,7 +37,6 @@ file constructFile(){
 }
 
 void freeFile(file f){
-  free(f->name);
   free_dynarray(f->lines);
   free(f);
 }
@@ -74,6 +74,8 @@ file readFile(char *name){
 // need to have '(', ')' and { 
 dynarray extractFns(file f){
   // iterate over the lines 
+
+  dynarray funs = create_dynarray(&freeLine, &printLine);
 
   char combined[1024] = {0};
   bool collecting = false; 
@@ -115,15 +117,73 @@ dynarray extractFns(file f){
         char fun[1200] = "extern ";
         strcat(fun, combined);
         strcat(fun, ";");
-        printf("%s\n", fun);
+        add_dynarray(funs, strdup(fun));
       }
       collecting = false; 
       combined[0] = '\0';
     }
   }
-  return NULL;
+  return funs;
 }
 
+void uppercase_basename(const char *path, char *up){
+  const char *base = strchr(path, '/');
+  if (!base) base = path;
+  else base++; // skip the '/'
+
+  int i; 
+
+  for (i = 0; base[i] && base[i] != '.' && i < sizeof(up) - 1; i++){
+    up[i] = toupper(base[i]);
+  }
+
+  up[i] = '\0';
+  
+}
+
+void writeUpdateHeaders(const char *header_name, dynarray prototypes, int header_len){
+  FILE *f = fopen(header_name, "r");
+  dynarray existingLines = create_dynarray(freeLine, printLine);
+
+  if (f){
+    // File exists 
+    char line[LINELEN];
+    while (fgets(line, sizeof(line), f)){
+      add_dynarray(existingLines, strdup(line));
+    }
+    fclose(f);
+  }
+
+  f = fopen(header_name, "w");
+  assert(f != NULL);
+
+  char guard[128];
+  char upHeader[header_len];
+  uppercase_basename(header_name, upHeader);
+  snprintf(guard, sizeof(guard), "__%s_H__", upHeader); // Need to upper case in future 
+  fprintf(f, "#ifndef %s\n#define %s\n\n", guard, guard);
+
+  for (int i = 0; i < prototypes->len; i++){
+    char *proto = prototypes->data[i];
+    bool already_present = false; 
+
+    for (int j = 0; j < existingLines->len; j++){
+      if (strstr(existingLines->data[j], proto)){
+        already_present = true;
+        break;
+      }
+    }
+
+    if (!already_present){
+      fprintf(f, "%s\n", proto);
+    }
+  }
+
+  fprintf(f, "\n#endif // %s\n", guard);
+  fclose(f);
+
+  free_dynarray(existingLines);
+}
 
 int main(int argc, char **argv){
   
@@ -137,9 +197,22 @@ int main(int argc, char **argv){
   file f = readFile(argv[1]);
   // print_dynarray(f->lines, stdout);
 
-  extractFns(f);
+  dynarray funs = extractFns(f);
+  print_dynarray(funs, stdout);
 
-  // freeFile(f);
+  char header[80] = {0};
+  strcpy(header, f->name);
+  // replace the trailing c with h 
+  int i = strlen(header);
+  for (; i >= 0 && header[i] != 'c'; i--){
+    /* EMPTY BODY */
+  }
+  header[i] = 'h';
+
+  writeUpdateHeaders(header, funs, strlen(header));
+
+  free_dynarray(funs);
+  freeFile(f);
 
   return EXIT_SUCCESS;
 }
